@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>实验室 GPU 预约看板</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/dist/umd/supabase.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#f4f7fb;--card:#fff;--border:#dfe7f1;--text:#172033;--muted:#6b7890;--primary:#4657d9;--primary-h:#3344c5;--danger:#dc2626;--warn:#f59e0b;--ok:#16a34a;--navy:#111b36}
+body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:radial-gradient(circle at 90% -10%,#dfe7ff 0,transparent 31%),var(--bg);color:var(--text);line-height:1.5;min-height:100vh}
+/* ---- 顶栏 ---- */
+.topbar{background:rgba(255,255,255,.88);backdrop-filter:blur(14px);border-bottom:1px solid var(--border);padding:14px clamp(18px,4vw,44px);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;position:sticky;top:0;z-index:10}
+.topbar h1{font-size:19px;font-weight:750;letter-spacing:-.35px;color:var(--navy)}
+.topbar .right{display:flex;align-items:center;gap:12px}
+.btn{cursor:pointer;border:1px solid var(--border);background:var(--card);color:var(--text);padding:7px 14px;border-radius:8px;font-size:13px;font-weight:600;transition:all .15s;box-shadow:0 1px 1px rgba(17,27,54,.03)}
+.btn:hover{background:#f1f5f9;transform:translateY(-1px);box-shadow:0 4px 12px rgba(17,27,54,.08)}
+.btn-primary{background:var(--primary);color:#fff;border-color:var(--primary);box-shadow:0 4px 12px rgba(70,87,217,.22)}
+.btn-primary:hover{background:var(--primary-h)}
+.btn-danger{color:var(--danger);border-color:#fecaca}
+.btn-danger:hover{background:#fef2f2}
+.btn-sm{padding:3px 8px;font-size:12px}
+.muted{color:var(--muted);font-size:13px}
+/* ---- 认证区 ---- */
+.auth-box{max-width:420px;margin:60px auto;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:32px;text-align:center}
+.auth-box h2{margin-bottom:8px}
+.auth-box input{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:6px;font-size:14px;margin-top:16px}
+.auth-box .btn-primary{width:100%;margin-top:16px;padding:10px}
+.auth-box .msg{margin-top:12px;font-size:13px;color:var(--muted)}
+.auth-box .err{color:var(--danger)}
+/* ---- 甘特图 ---- */
+.toolbar{max-width:1600px;margin:auto;display:flex;align-items:center;gap:8px;padding:22px clamp(18px,4vw,44px) 14px;flex-wrap:wrap}
+.view-switcher{display:inline-flex;padding:3px;background:#e9eef7;border-radius:10px;gap:2px}
+.view-switcher .btn{border-color:transparent;background:transparent;box-shadow:none;padding:5px 10px}
+.view-switcher .btn.active{background:#fff;color:var(--primary);box-shadow:0 1px 4px rgba(17,27,54,.13)}
+.view-range{font-weight:650;color:#34425c;margin-left:5px}
+.gantt-wrap{overflow:auto;padding:0 clamp(18px,4vw,44px) 36px;max-width:1600px;margin:auto}
+.gantt{border:1px solid var(--border);border-radius:14px;background:var(--card);min-width:900px;overflow:hidden;box-shadow:0 12px 32px rgba(24,42,78,.07)}
+.gantt-row{display:grid;grid-template-columns:180px 1fr;border-bottom:1px solid var(--border)}
+.gantt-row:last-child{border-bottom:none}
+.gantt-label{padding:10px 14px;font-size:13px;font-weight:650;border-right:1px solid var(--border);display:flex;align-items:center;background:#f8faff;position:sticky;left:0;z-index:2}
+.gantt-track{position:relative;height:44px;background-image:repeating-linear-gradient(90deg,transparent 0,transparent calc(100%/var(--grid-cols) - 1px),#edf1f7 calc(100%/var(--grid-cols) - 1px),#edf1f7 calc(100%/var(--grid-cols)))}
+.gantt-track:hover{background-color:#f8fbff}
+.gantt-bar{position:absolute;top:7px;height:30px;border-radius:6px;padding:0 8px;font-size:11px;font-weight:650;color:#fff;overflow:hidden;white-space:nowrap;cursor:pointer;display:flex;align-items:center;gap:4px;transition:filter .15s,transform .15s;box-shadow:0 2px 5px rgba(18,30,64,.15)}
+.gantt-bar:hover{filter:brightness(1.1)}
+.gantt-bar.past{opacity:.45}
+/* 时间轴头部 */
+.gantt-header{display:grid;grid-template-columns:180px 1fr;border-bottom:2px solid var(--border)}
+.gantt-header-label{padding:10px 14px;font-size:12px;font-weight:650;color:var(--muted);border-right:1px solid var(--border);background:#f8faff;position:sticky;left:0;z-index:2}
+.gantt-header-axis{display:grid}
+.gantt-header-day{padding:10px 4px;font-size:11px;color:var(--muted);text-align:center;border-right:1px solid var(--border);white-space:nowrap;overflow:hidden}
+.gantt-header-day:last-child{border-right:none}
+.gantt-header-day.today{color:var(--primary);font-weight:600}
+/* ---- 弹窗 ---- */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;z-index:50;padding:16px}
+.modal{background:var(--card);border-radius:16px;padding:26px;max-width:500px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:0 24px 80px rgba(10,20,45,.24)}
+.modal h2{margin-bottom:16px;font-size:18px}
+.field{margin-bottom:14px}
+.field label{display:block;font-size:13px;font-weight:500;margin-bottom:4px}
+.field select,.field input{width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:14px}
+.field-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}
+.warn-box{background:#fef3c7;border:1px solid #fde68a;color:#92400e;padding:10px 12px;border-radius:6px;font-size:13px;margin-bottom:14px}
+.empty{text-align:center;padding:60px 20px;color:var(--muted)}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>🖥️ GPU 预约看板</h1>
+  <div class="right" id="topRight"></div>
+</div>
+
+<div id="main">
+  <!-- 内容动态渲染 -->
+  <div class="empty">加载中…</div>
+</div>
+
+<!-- 弹窗容器 -->
+<div id="modalRoot"></div>
+
+<script>
+// ============================================================
+// 配置：把下面两个值换成你 Supabase 项目的
+// Dashboard > Project Settings > API 里的 URL 和 anon key
+// ============================================================
+const SUPABASE_URL = 'https://grbyidfrealvpffohybu.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdyYnlpZGZyZWFsdnBmZm9oeWJ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg2ODQyNDMsImV4cCI6MjEwNDI2MDI0M30.B2mHWeVvHbZwlfVIJDA_ozI-ZCqTcrkI9cmn_8wz-yU';
+
+const sb = window.supabase
+  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY)
+  : null;
+
+// ---- 调色板（按 user_id 哈希取色，稳定）----
+const PALETTE = [
+  ['#4f46e5','#6366f1'],['#0ea5e9','#38bdf8'],['#16a34a','#22c55e'],
+  ['#db2777','#ec4899'],['#ea580c','#f97316'],['#7c3aed','#8b5cf6'],
+  ['#0891b2','#06b6d4'],['#ca8a04','#eab308'],['#dc2626','#ef4444'],
+  ['#4338ca','#6366f1'],['#be185d','#f472b6']
+];
+function colorFor(userId){
+  let h=0; for(let i=0;i<userId.length;i++) h=(h*31+userId.charCodeAt(i))>>>0;
+  return PALETTE[h%PALETTE.length];
+}
+
+// ---- 状态 ----
+let state = {
+  user: null,
+  profile: null,
+  servers: [],
+  gpus: [],          // [{id, server_id, label, server_name}]
+  reservations: [],  // [{id, gpu_id, user_id, display_name, start_time, end_time, note}]
+  viewCenter: new Date(), // 当前视图的锚点日期
+  viewMode: 'week'        // day | week | month | year
+};
+state.viewCenter.setHours(0,0,0,0);
+
+// ============================================================
+// 入口
+// ============================================================
+(async function init(){
+  try {
+    if (!sb) throw new Error('Supabase JS SDK 未加载。检查 index.html 顶部 <script src=...> 的 CDN 路径是否可访问。');
+    // 恢复会话
+    const { data: { session } } = await sb.auth.getSession();
+    if (session?.user) {
+      state.user = session.user;
+      await loadProfile();
+    }
+    await loadConfig();
+    await loadReservations();
+    render();
+    subscribeRealtime();
+  } catch (err) {
+    console.error('初始化失败:', err);
+    document.getElementById('main').innerHTML =
+      `<div class="empty" style="color:#dc2626">
+         <h2 style="margin-bottom:8px">⚠️ 初始化失败</h2>
+         <pre style="text-align:left;background:#fef2f2;padding:12px;border-radius:6px;margin-top:12px;white-space:pre-wrap">${String(err?.message || err)}</pre>
+         <p style="margin-top:12px">检查点：</p>
+         <p>1. index.html 里 SUPABASE_URL / SUPABASE_KEY 是否填了真实值</p>
+         <p>2. Supabase 控制台里是否已运行 schema.sql 建表</p>
+         <p>3. 浏览器控制台（F12）看详细报错</p>
+       </div>`;
+  }
+})();
+
+// ============================================================
+// 数据加载
+// ============================================================
+async function loadProfile(){
+  const { data } = await sb.from('profiles').select('*').eq('user_id', state.user.id).maybeSingle();
+  state.profile = data;
+}
+
+async function loadConfig(){
+  const [{data: servers}, {data: gpus}] = await Promise.all([
+    sb.from('servers').select('*').order('id'),
+    sb.from('gpus').select('*, servers(name)').order('slot_index')
+  ]);
+  state.servers = servers || [];
+  // 按 server_id 再 slot_index 稳定排序（保险起见在 JS 里再排一次）
+  state.gpus = (gpus||[])
+    .map(g => ({...g, server_name: g.servers?.name}))
+    .sort((a,b) => a.server_id - b.server_id || a.slot_index - b.slot_index);
+}
+
+async function loadReservations(){
+  const { data } = await sb.from('reservations')
+    .select('*, profiles(display_name)').order('start_time');
+  state.reservations = (data||[]).map(r => ({
+    ...r, display_name: r.profiles?.display_name || '未知'
+  }));
+}
+
+// ============================================================
+// Realtime 订阅
+// ============================================================
+function subscribeRealtime(){
+  sb.channel('reservations-changes')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'reservations' }, async () => {
+      await loadReservations(); renderMain();
+    })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'gpus' }, async () => {
+      await loadConfig(); renderMain();
+    })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'servers' }, async () => {
+      await loadConfig(); renderMain();
+    })
+    .subscribe();
+}
+
+// ============================================================
+// 渲染
+// ============================================================
+function render(){
+  renderTop();
+  renderMain();
+}
+
+function renderTop(){
+  const el = document.getElementById('topRight');
+  if (state.user) {
+    el.innerHTML = `
+      <span class="muted">${state.profile?.display_name || state.user.email}</span>
+      <button class="btn btn-sm" onclick="openProfileModal()">改名</button>
+      <button class="btn btn-sm" onclick="signOut()">退出</button>
+    `;
+  } else {
+    el.innerHTML = `<span class="muted">未登录</span>`;
+  }
+}
+
+function renderMain(){
+  const el = document.getElementById('main');
+  if (!state.user) { el.innerHTML = authHtml(); return; }
+  if (!state.profile) { el.innerHTML = profilePromptHtml(); return; }
+  el.innerHTML = boardHtml();
+}
+
+// ---- 登录界面 ----
+function authHtml(){
+  return `
+    <div class="auth-box">
+      <h2>登录 / 注册</h2>
+      <p class="muted">输入邮箱，我们会发一封魔法链接邮件给你，点击即可登录。</p>
+      <input id="loginEmail" type="email" placeholder="your@email.com">
+      <button class="btn btn-primary" id="sendBtn" onclick="sendMagicLink()">发送登录链接</button>
+      <div class="msg" id="loginMsg"></div>
+      <div style="margin:16px 0;display:flex;align-items:center;gap:10px;color:var(--muted);font-size:12px">
+        <span style="flex:1;height:1px;background:var(--border)"></span>或<span style="flex:1;height:1px;background:var(--border)"></span>
+      </div>
+      <button class="btn" onclick="signInWithGithub()" style="width:100%;padding:10px;display:flex;align-items:center;justify-content:center;gap:8px;font-weight:500">
+        <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+        用 GitHub 登录
+      </button>
+      <div class="msg muted" style="font-size:12px">GitHub 登录不走邮件，不受邮箱限流影响。</div>
+    </div>`;
+}
+
+// ---- 首次填名字 ----
+function profilePromptHtml(){
+  return `
+    <div class="auth-box">
+      <h2>首次使用，请填你的名字</h2>
+      <p class="muted">看板上会显示这个名字，方便大家认领预约。</p>
+      <input id="profName" type="text" placeholder="如：张三" maxlength="20">
+      <button class="btn btn-primary" onclick="saveProfile()">保存</button>
+    </div>`;
+}
+
+// ---- 看板主体 ----
+function boardHtml(){
+  if (state.gpus.length === 0) {
+    return `<div class="empty">还没有配置任何服务器/GPU。<br>请先在 Supabase 控制台运行 schema.sql 里的 seed。</div>`;
+  }
+  const rangeTitle = getViewWindow().title;
+  return `
+    <div class="toolbar">
+      <div class="view-switcher" aria-label="时间视图">
+        ${[['day','日'],['week','周'],['month','月'],['year','年']].map(([mode,label]) =>
+          `<button class="btn btn-sm ${state.viewMode===mode?'active':''}" onclick="setViewMode('${mode}')">${label}</button>`).join('')}
+      </div>
+      <button class="btn btn-sm" onclick="shiftView(-1)">← 上一${viewUnit()}</button>
+      <button class="btn btn-sm" onclick="shiftView(0)">今天</button>
+      <button class="btn btn-sm" onclick="shiftView(1)">下一${viewUnit()} →</button>
+      <span class="view-range" id="viewRange">${rangeTitle}</span>
+      <span style="flex:1"></span>
+      ${state.user ? `<button class="btn btn-primary btn-sm" onclick="openReserveModal()">+ 新建预约</button>` : ''}
+    </div>
+    <div class="gantt-wrap">${ganttHtml()}</div>
+  `;
+}
+
+// ---- 甘特图渲染 ----
+function ganttHtml(){
+  const view = getViewWindow();
+  const {start: windowStart, end: windowEnd, cells} = view;
+  const today = new Date(); today.setHours(0,0,0,0);
+
+  // 轴头
+  let html = `<div class="gantt"><div class="gantt-header"><div class="gantt-header-label">GPU 资源</div><div class="gantt-header-axis" style="grid-template-columns:repeat(${cells.length},1fr)">`;
+  cells.forEach(cell => {
+    const isToday = cell.start.getTime()===today.getTime();
+    html += `<div class="gantt-header-day ${isToday?'today':''}">${cell.label}</div>`;
+  });
+  html += `</div></div>`;
+
+  const totalMs = windowEnd - windowStart;
+
+  state.gpus.forEach(gpu => {
+    html += `<div class="gantt-row"><div class="gantt-label">${gpu.label}</div><div class="gantt-track" style="--grid-cols:${cells.length}" onclick="void(0)">`;
+    // 这块 GPU 上的预约
+    state.reservations
+      // 必须将 API 返回的 ISO 文本转为 Date；直接和 Date 比较会得到 NaN，导致预约全部消失。
+      .filter(r => r.gpu_id === gpu.id && new Date(r.end_time) > windowStart && new Date(r.start_time) < windowEnd)
+      .forEach(r => {
+        const s = Math.max(0, new Date(r.start_time) - windowStart);
+        const e = Math.min(totalMs, new Date(r.end_time) - windowStart);
+        const leftPct = s/totalMs*100;
+        const widthPct = Math.max(1.5,(e-s)/totalMs*100); // 最小宽度避免消失
+        const [bg] = colorFor(r.user_id);
+        const isPast = new Date(r.end_time) < new Date();
+        const mine = state.user && r.user_id === state.user.id;
+        const name = r.display_name + (mine ? ' (我)' : '');
+        html += `<div class="gantt-bar ${isPast?'past':''}"
+          style="left:${leftPct}%;width:${widthPct}%;background:${bg}"
+          onclick="openReserveModal(${r.id})"
+          title="${esc(name)} · ${fmtTime(r.start_time)} → ${fmtTime(r.end_time)}${r.note?'\\n'+esc(r.note):''}">
+          ${esc(name)}</div>`;
+      });
+    html += `</div></div>`;
+  });
+  html += `</div>`;
+  return html;
+}
+
+// ============================================================
+// 登录 / 注册
+// ============================================================
+let sendCooldown = 0; // 邮件发送冷却（秒）
+
+async function sendMagicLink(){
+  const email = document.getElementById('loginEmail').value.trim();
+  const msg = document.getElementById('loginMsg');
+  const btn = document.getElementById('sendBtn');
+  if(!email){ msg.innerHTML = '<span class="err">请填邮箱</span>'; return; }
+  if(sendCooldown > 0){
+    msg.innerHTML = `<span class="muted">邮件已发送过，请先去收件箱查收。${sendCooldown} 秒后可重发。</span>`;
+    return;
+  }
+
+  // 发送中：禁用按钮，防止连点
+  btn.disabled = true;
+  btn.textContent = '发送中…';
+  msg.innerHTML = '<span class="muted">正在发送…</span>';
+
+  const { error } = await sb.auth.signInWithOtp({
+    email,
+    options: { emailRedirectTo: window.location.href }
+  });
+
+  if(error){
+    btn.disabled = false;
+    btn.textContent = '发送登录链接';
+    if(/rate limit/i.test(error.message)){
+      msg.innerHTML = '<span class="err">发送太频繁被限流，请等几分钟再试，或改用下方 GitHub 登录。</span>';
+    } else {
+      msg.innerHTML = `<span class="err">发送失败：${esc(error.message)}</span>`;
+    }
+    return;
+  }
+
+  // 成功：显示明确反馈，并进入 60 秒冷却防止重复点击
+  msg.innerHTML = `✅ 登录链接已发送到 <b>${esc(email)}</b>，请去收件箱点击。若没收到，60 秒后可重发。`;
+  startCooldown(btn, 60);
+}
+
+function startCooldown(btn, seconds){
+  sendCooldown = seconds;
+  btn.textContent = `${seconds} 秒后可重发`;
+  const timer = setInterval(() => {
+    sendCooldown--;
+    if(sendCooldown <= 0){
+      clearInterval(timer);
+      btn.disabled = false;
+      btn.textContent = '重新发送';
+    } else {
+      btn.textContent = `${sendCooldown} 秒后可重发`;
+    }
+  }, 1000);
+}
+
+async function signInWithGithub(){
+  const msg = document.getElementById('loginMsg');
+  msg.innerHTML = '<span class="muted">正在跳转 GitHub 授权…</span>';
+  const { error } = await sb.auth.signInWithOAuth({
+    provider: 'github',
+    options: { redirectTo: window.location.href }
+  });
+  if(error){
+    console.error('GitHub 登录失败:', error);
+    msg.innerHTML = `<span class="err">GitHub 登录失败：${esc(error.message)}</span>`;
+  }
+}
+
+async function saveProfile(){
+  const name = document.getElementById('profName').value.trim();
+  if(!name){ return; }
+  const { error } = await sb.from('profiles')
+    .upsert({ user_id: state.user.id, display_name: name, created_at: new Date().toISOString() });
+  if(error){ alert('保存失败: '+error.message); return; }
+  state.profile = { user_id: state.user.id, display_name: name };
+  renderMain();
+}
+
+async function signOut(){
+  await sb.auth.signOut();
+  state.user = null; state.profile = null;
+  render();
+}
+
+// 监听 Auth 状态变化（魔法链接回调）
+sb.auth.onAuthStateChange(async (event, session) => {
+  if (event === 'SIGNED_IN' && session?.user) {
+    state.user = session.user;
+    await loadProfile();
+    render();
+  }
+  if (event === 'SIGNED_OUT') {
+    state.user = null; state.profile = null;
+    render();
+  }
+});
+
+// ============================================================
+// 预约弹窗（新建 / 编辑 / 删除）
+// ============================================================
+function openReserveModal(resvId){
+  const editing = resvId ? state.reservations.find(r => r.id === resvId) : null;
+  const mine = editing && state.user && editing.user_id === state.user.id;
+
+  // 默认时间：现在取整到下一个小时，+12h
+  const defStart = new Date(); defStart.setMinutes(0,0,0); defStart.setHours(defStart.getHours()+1);
+  const defEnd = new Date(defStart); defEnd.setHours(defEnd.getHours()+12);
+
+  const gpuOpts = state.gpus.map(g =>
+    `<option value="${g.id}" ${editing&&editing.gpu_id===g.id?'selected':''}>${esc(g.label)}</option>`
+  ).join('');
+
+  document.getElementById('modalRoot').innerHTML = `
+    <div class="modal-overlay" onclick="if(event.target===this)closeModal()">
+      <div class="modal">
+        <h2>${editing ? (mine?'编辑预约':'预约详情') : '新建预约'}</h2>
+        ${editing && !mine ? '' : ''}
+        ${editing ? `<div class="muted" style="margin-bottom:12px">预约人：${esc(editing.display_name)}</div>` : ''}
+        <div class="field">
+          <label>GPU</label>
+          <select id="rGpu" ${editing&&!mine?'disabled':''}>${gpuOpts}</select>
+        </div>
+        <div class="field-row">
+          <div class="field"><label>开始时间</label><input id="rStart" type="datetime-local" value="${toLocal(defStart)}"></div>
+          <div class="field"><label>结束时间</label><input id="rEnd" type="datetime-local" value="${toLocal(defEnd)}"></div>
+        </div>
+        <div class="field">
+          <label>备注（可选）</label>
+          <input id="rNote" type="text" maxlength="200" placeholder="如：训练 LLaMA-70B"
+            value="${editing?esc(editing.note||''):''}" ${editing&&!mine?'disabled':''}>
+        </div>
+        <div id="conflictWarn"></div>
+        <div class="modal-actions">
+          ${editing && mine ? `<button class="btn btn-danger btn-sm" onclick="deleteResv(${editing.id})">删除</button>` : ''}
+          <button class="btn btn-sm" onclick="closeModal()">取消</button>
+          ${mine || !editing ? `<button class="btn btn-primary btn-sm" onclick="saveResev(${editing?editing.id:'null'})">保存</button>` : ''}
+        </div>
+        <div style="margin-top:8px"><button class="btn btn-sm" onclick="checkConflict()">检查冲突</button></div>
+      </div>
+    </div>`;
+}
+
+function closeModal(){ document.getElementById('modalRoot').innerHTML = ''; }
+
+async function checkConflict(){
+  const gpuId = parseInt(document.getElementById('rGpu').value);
+  const start = new Date(document.getElementById('rStart').value);
+  const end = new Date(document.getElementById('rEnd').value);
+  if(!(gpuId && start && end) || end<=start){
+    document.getElementById('conflictWarn').innerHTML = '<div class="warn-box">⚠️ 时间无效，结束须晚于开始。</div>';
+    return;
+  }
+  const overlaps = state.reservations.filter(r =>
+    r.gpu_id === gpuId && r.end_time > start && r.start_time < end
+  );
+  const box = document.getElementById('conflictWarn');
+  if(overlaps.length === 0){
+    box.innerHTML = '<div class="warn-box" style="background:#dcfce7;border-color:#86efac;color:#166534">✅ 无冲突，该时段空闲。</div>';
+  } else {
+    const list = overlaps.map(r => `${r.display_name}: ${fmtTime(r.start_time)} → ${fmtTime(r.end_time)}`).join('<br>');
+    box.innerHTML = `<div class="warn-box">⚠️ 发现 ${overlaps.length} 个重叠预约（仍可提交，靠自行协调）：<br>${list}</div>`;
+  }
+}
+
+async function saveResev(id){
+  const gpuId = parseInt(document.getElementById('rGpu').value);
+  const start = document.getElementById('rStart').value;
+  const end = document.getElementById('rEnd').value;
+  const note = document.getElementById('rNote').value.trim();
+  if(!gpuId || !start || !end){ alert('请填完整'); return; }
+  if(new Date(end) <= new Date(start)){ alert('结束时间须晚于开始时间'); return; }
+
+  const payload = {
+    gpu_id: gpuId,
+    user_id: state.user.id,
+    start_time: new Date(start).toISOString(),
+    end_time: new Date(end).toISOString(),
+    note: note || null
+  };
+  let res;
+  if(id){
+    res = await sb.from('reservations').update(payload).eq('id', id).select();
+  } else {
+    res = await sb.from('reservations').insert(payload).select();
+  }
+  if(res.error){ alert('保存失败: '+res.error.message); return; }
+  closeModal(); await loadReservations(); renderMain();
+}
+
+async function deleteResv(id){
+  if(!confirm('确定删除这条预约？')) return;
+  const { error } = await sb.from('reservations').delete().eq('id', id);
+  if(error){ alert('删除失败: '+error.message); return; }
+  closeModal(); await loadReservations(); renderMain();
+}
+
+// ---- 改名弹窗 ----
+function openProfileModal(){
+  document.getElementById('modalRoot').innerHTML = `
+    <div class="modal-overlay" onclick="if(event.target===this)closeModal()">
+      <div class="modal">
+        <h2>修改显示名</h2>
+        <div class="field">
+          <label>显示名</label>
+          <input id="newName" type="text" maxlength="20" value="${esc(state.profile?.display_name||'')}">
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-sm" onclick="closeModal()">取消</button>
+          <button class="btn btn-primary btn-sm" onclick="updateProfile()">保存</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+async function updateProfile(){
+  const name = document.getElementById('newName').value.trim();
+  if(!name) return;
+  const { error } = await sb.from('profiles')
+    .update({ display_name: name }).eq('user_id', state.user.id);
+  if(error){ alert('更新失败: '+error.message); return; }
+  state.profile.display_name = name;
+  closeModal(); renderTop(); renderMain();
+}
+
+// ============================================================
+// 视图导航
+// ============================================================
+function shiftView(days){
+  if(days === 0){ state.viewCenter = new Date(); state.viewCenter.setHours(0,0,0,0); }
+  else if(state.viewMode === 'day') state.viewCenter.setDate(state.viewCenter.getDate()+days);
+  else if(state.viewMode === 'week') state.viewCenter.setDate(state.viewCenter.getDate()+days*7);
+  else if(state.viewMode === 'month') state.viewCenter.setMonth(state.viewCenter.getMonth()+days);
+  else state.viewCenter.setFullYear(state.viewCenter.getFullYear()+days);
+  renderMain();
+}
+
+function setViewMode(mode){ state.viewMode = mode; renderMain(); }
+function viewUnit(){ return {day:'日',week:'周',month:'月',year:'年'}[state.viewMode]; }
+
+function getViewWindow(){
+  const anchor = new Date(state.viewCenter); anchor.setHours(0,0,0,0);
+  let start, end, cells = [];
+  if(state.viewMode === 'day'){
+    start = anchor; end = new Date(start); end.setDate(end.getDate()+1);
+    for(let hour=0;hour<24;hour++){ const d=new Date(start); d.setHours(hour); cells.push({start:d,label:String(hour).padStart(2,'0')+':00'}); }
+  } else if(state.viewMode === 'week'){
+    start = new Date(anchor); start.setDate(start.getDate()-start.getDay());
+    end = new Date(start); end.setDate(end.getDate()+7);
+    for(let i=0;i<7;i++){ const d=new Date(start); d.setDate(d.getDate()+i); cells.push({start:d,label:fmtDay(d)}); }
+  } else if(state.viewMode === 'month'){
+    start = new Date(anchor.getFullYear(),anchor.getMonth(),1);
+    end = new Date(anchor.getFullYear(),anchor.getMonth()+1,1);
+    for(let d=new Date(start);d<end;d.setDate(d.getDate()+1)) cells.push({start:new Date(d),label:(d.getMonth()+1)+'/'+d.getDate()});
+  } else {
+    start = new Date(anchor.getFullYear(),0,1); end = new Date(anchor.getFullYear()+1,0,1);
+    for(let month=0;month<12;month++) cells.push({start:new Date(anchor.getFullYear(),month,1),label:(month+1)+' 月'});
+  }
+  const title = state.viewMode === 'day' ? fmtDate(start) :
+    state.viewMode === 'week' ? `${fmtDate(start)} — ${fmtDate(new Date(end-1))}` :
+    state.viewMode === 'month' ? `${start.getFullYear()} 年 ${start.getMonth()+1} 月` : `${start.getFullYear()} 年`;
+  return {start,end,cells,title};
+}
+
+// ============================================================
+// 工具函数
+// ============================================================
+function fmtDay(d){ return (d.getMonth()+1)+'/'+d.getDate()+' '+['日','一','二','三','四','五','六'][d.getDay()]; }
+function fmtDate(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function fmtTime(iso){
+  const d = new Date(iso);
+  return (d.getMonth()+1)+'/'+d.getDate()+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+}
+function toLocal(d){
+  const off = d.getTimezoneOffset();
+  const local = new Date(d.getTime() - off*60000);
+  return local.toISOString().slice(0,16);
+}
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+</script>
+</body>
+</html>
