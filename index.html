@@ -63,11 +63,11 @@ body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,s
 .warn-box{background:#fef3c7;border:1px solid #fde68a;color:#92400e;padding:10px 12px;border-radius:6px;font-size:13px;margin-bottom:14px}
 .empty{text-align:center;padding:60px 20px;color:var(--muted)}
 </style>
-</head>
+<style>:root{--bg:#f4f7fb;--card:#fff;--border:#e5eaf2;--text:#17233a;--muted:#728099;--primary:#3867f4;--primary-h:#2857e8;--danger:#dc5963;--navy:#101b35}body{background:radial-gradient(circle at 95% -15%,#dfe8ff,transparent 32%),var(--bg);font-family:Inter,"PingFang SC","Microsoft YaHei",system-ui}.topbar{height:72px;padding:0 clamp(18px,4vw,48px);background:#fffffff0;backdrop-filter:blur(15px);box-shadow:0 1px #e5eaf2}.topbar h1{font-size:17px;color:var(--navy)}.btn{border-radius:9px;font-weight:700;font-size:12px;padding:7px 12px}.btn-primary{box-shadow:0 7px 16px #3867f53d}.toolbar{max-width:1540px;margin:auto;padding:30px clamp(18px,4vw,48px) 14px;gap:8px}.view-switcher{padding:3px;background:#eff3f8;border-radius:10px}.view-switcher .btn{border:0;background:transparent;box-shadow:none}.view-switcher .btn.active{background:#fff;color:var(--primary);box-shadow:0 2px 5px #2035531c}.view-range{font-weight:800;color:#27354e;min-width:170px;text-align:center}.gantt-wrap{max-width:1540px;margin:auto;padding:0 clamp(18px,4vw,48px) 38px}.gantt{border:1px solid var(--border);border-radius:17px;box-shadow:0 14px 38px #1d315b12}.gantt-row,.gantt-header{grid-template-columns:190px 1fr}.gantt-header{background:#fafcff}.gantt-label{padding:10px 15px;font-weight:800;background:#fff}.gantt-header-label{padding:11px 15px;font-size:10px;letter-spacing:.09em;font-weight:850;background:#fafcff}.gantt-track{height:58px}.gantt-bar{top:14px;height:30px;border-radius:7px;font-size:10px;font-weight:800;box-shadow:0 3px 8px #1624422c}.gantt-header-day{font-size:10px;padding:10px 3px}.auth-box{border-radius:20px;box-shadow:0 15px 40px #1d315b12}.modal{border-radius:18px;box-shadow:0 25px 80px #10193255}.field select,.field input{border-radius:8px}.empty{padding:80px 20px}@media(max-width:760px){.topbar{height:63px}.toolbar{padding-top:22px}.gantt-row,.gantt-header{grid-template-columns:145px 1fr}.gantt-label{padding:10px}.gantt-header-label{padding:11px 10px}.view-range{order:3;flex:1}}</style></head>
 <body>
 
 <div class="topbar">
-  <h1>🖥️ GPU 预约看板</h1>
+  <h1>▦ GPU Lab <span style="font-size:11px;color:var(--muted);font-weight:650;letter-spacing:.08em">RESOURCE SCHEDULER</span></h1>
   <div class="right" id="topRight"></div>
 </div>
 
@@ -251,27 +251,12 @@ function profilePromptHtml(){
 
 // ---- 看板主体 ----
 function boardHtml(){
-  if (state.gpus.length === 0) {
-    return `<div class="empty">还没有配置任何服务器/GPU。<br>请先在 Supabase 控制台运行 schema.sql 里的 seed。</div>`;
-  }
-  const rangeTitle = getViewWindow().title;
-  return `
-    <div class="toolbar">
-      <div class="view-switcher" aria-label="时间视图">
-        ${[['day','日'],['week','周'],['month','月'],['year','年']].map(([mode,label]) =>
-          `<button class="btn btn-sm ${state.viewMode===mode?'active':''}" onclick="setViewMode('${mode}')">${label}</button>`).join('')}
-      </div>
-      <button class="btn btn-sm" onclick="shiftView(-1)">← 上一${viewUnit()}</button>
-      <button class="btn btn-sm" onclick="shiftView(0)">今天</button>
-      <button class="btn btn-sm" onclick="shiftView(1)">下一${viewUnit()} →</button>
-      <span class="view-range" id="viewRange">${rangeTitle}</span>
-      <span style="flex:1"></span>
-      ${state.user ? `<button class="btn btn-primary btn-sm" onclick="openReserveModal()">+ 新建预约</button>` : ''}
-    </div>
-    <div class="gantt-wrap">${ganttHtml()}</div>
-  `;
+  if(!state.gpus.length)return `<div class="empty">尚未配置 GPU 资源。请先在 Supabase 中运行 schema.sql。</div>`;
+  const view=getViewWindow(),now=new Date();
+  const active=state.gpus.filter(g=>state.reservations.some(r=>String(r.gpu_id)===String(g.id)&&new Date(r.start_time)<=now&&new Date(r.end_time)>now)).length;
+  let booked=0;state.reservations.filter(r=>new Date(r.end_time)>view.start&&new Date(r.start_time)<view.end).forEach(r=>booked+=(Math.min(new Date(r.end_time),view.end)-Math.max(new Date(r.start_time),view.start))/36e5);
+  return `<div class="app-shell"><div class="dashboard-head"><div><div class="eyebrow">RESOURCE OVERVIEW</div><h2>GPU 资源看板</h2><p>实时掌握资源占用情况，提前安排你的计算任务。</p></div><button class="btn btn-primary" onclick="openReserveModal()">＋ 新建预约</button></div><div class="metrics"><div class="metric"><span>▦ 资源总数</span><b>${state.gpus.length}</b><small>${state.servers.length} 台服务器</small></div><div class="metric"><span>● 此刻可用</span><b>${state.gpus.length-active}</b><small>当前没有进行中的预约</small></div><div class="metric"><span>◷ 本视图已预约</span><b>${Math.round(booked*10)/10} h</b><small>按预约区间累计</small></div></div><div class="board-panel"><div class="toolbar"><div class="view-switcher">${[['day','日'],['week','周'],['month','月'],['year','年']].map(([m,l])=>`<button class="btn btn-sm ${state.viewMode===m?'active':''}" onclick="setViewMode('${m}')">${l}</button>`).join('')}</div><button class="btn btn-sm" onclick="shiftView(-1)">← 上一${viewUnit()}</button><span class="view-range">${view.title}</span><button class="btn btn-sm" onclick="shiftView(0)">今天</button><button class="btn btn-sm" onclick="shiftView(1)">下一${viewUnit()} →</button><span style="flex:1"></span><span class="muted">点击色块查看或编辑预约</span></div><div class="gantt-wrap">${ganttHtml()}</div></div></div>`;
 }
-
 // ---- 甘特图渲染 ----
 function ganttHtml(){
   const view = getViewWindow();
@@ -469,7 +454,7 @@ async function checkConflict(){
     return;
   }
   const overlaps = state.reservations.filter(r =>
-    r.gpu_id === gpuId && r.end_time > start && r.start_time < end
+    r.gpu_id === gpuId && new Date(r.end_time) > start && new Date(r.start_time) < end
   );
   const box = document.getElementById('conflictWarn');
   if(overlaps.length === 0){
@@ -597,4 +582,7 @@ function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
 </script>
 </body>
 </html>
+
+
+
 
