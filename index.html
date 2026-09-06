@@ -112,6 +112,8 @@ function myColor(){ return localStorage.getItem(`gpu-board-color-${state.user?.i
 // ---- 状态 ----
 let state = {
   user: null,
+  authReady: false,
+  dataReady: false,
   profile: null,
   servers: [],
   gpus: [],          // [{id, server_id, label, server_name}]
@@ -208,6 +210,7 @@ function render(){
 
 function renderTop(){
   const el = document.getElementById('topRight');
+  if(!state.authReady){ el.innerHTML = ''; return; }
   if (state.user) {
     el.innerHTML = `
       <span class="muted">${state.profile?.display_name || state.user.email}</span>
@@ -221,6 +224,7 @@ function renderTop(){
 
 function renderMain(){
   const el = document.getElementById('main');
+  if(!state.authReady || (state.user && !state.dataReady)){ el.innerHTML = '<div class="empty">正在恢复登录状态…</div>'; return; }
   if (!state.user) { el.innerHTML = authHtml(); return; }
   if (!state.profile) { el.innerHTML = profilePromptHtml(); return; }
   el.innerHTML = boardHtml();
@@ -396,13 +400,12 @@ async function signOut(){
 
 // 监听 Auth 状态变化（魔法链接回调）
 sb.auth.onAuthStateChange((event, session) => {
-  if (event === 'SIGNED_IN' && session?.user) {
-    state.user = session.user;
-    state.profile = null;
-    render();
-    setTimeout(async () => { try { await refreshData(); render(); } catch(err) { showLoadError(err); } }, 0);
+  if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session?.user) {
+    state.user = session.user; state.profile = null; state.authReady = true; state.dataReady = false; render();
+    setTimeout(async () => { try { await refreshData(); state.dataReady = true; render(); } catch(err) { showLoadError(err); } }, 0);
   }
-  if (event === 'SIGNED_OUT') { state.user = null; state.profile = null; render(); }
+  if (event === 'INITIAL_SESSION' && !session?.user) { setTimeout(() => { if(!state.authReady) { state.authReady = true; render(); } }, 600); }
+  if (event === 'SIGNED_OUT') { state.user = null; state.profile = null; state.authReady = true; state.dataReady = true; render(); }
 });
 
 // ============================================================
@@ -608,6 +611,9 @@ function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
 </script>
 </body>
 </html>
+
+
+
 
 
 
