@@ -120,30 +120,27 @@ state.viewCenter.setHours(0,0,0,0);
 // ============================================================
 (async function init(){
   try {
-    if (!sb) throw new Error('Supabase JS SDK 未加载。检查 index.html 顶部 <script src=...> 的 CDN 路径是否可访问。');
-    // 恢复会话
-    const { data: { session } } = await sb.auth.getSession();
-    if (session?.user) {
-      state.user = session.user;
-      await loadProfile();
-    }
-    await loadConfig();
-    await loadReservations();
+    if (!sb) throw new Error('Supabase JS SDK 未加载。');
+    const { data: { session } } = await withTimeout(sb.auth.getSession(), '读取登录状态');
+    if (session?.user) state.user = session.user;
+    await refreshData();
     render();
     subscribeRealtime();
-  } catch (err) {
-    console.error('初始化失败:', err);
-    document.getElementById('main').innerHTML =
-      `<div class="empty" style="color:#dc2626">
-         <h2 style="margin-bottom:8px">⚠️ 初始化失败</h2>
-         <pre style="text-align:left;background:#fef2f2;padding:12px;border-radius:6px;margin-top:12px;white-space:pre-wrap">${String(err?.message || err)}</pre>
-         <p style="margin-top:12px">检查点：</p>
-         <p>1. index.html 里 SUPABASE_URL / SUPABASE_KEY 是否填了真实值</p>
-         <p>2. Supabase 控制台里是否已运行 schema.sql 建表</p>
-         <p>3. 浏览器控制台（F12）看详细报错</p>
-       </div>`;
-  }
+  } catch (err) { showLoadError(err); }
 })();
+
+function withTimeout(promise, label){
+  return Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(new Error(`${label} 超时，请检查网络后重试。`)), 15000))]);
+}
+async function refreshData(){
+  const jobs = [loadConfig(), loadReservations()];
+  if(state.user) jobs.unshift(loadProfile());
+  await withTimeout(Promise.all(jobs), '加载看板数据');
+}
+function showLoadError(err){
+  console.error('初始化失败:', err);
+  document.getElementById('main').innerHTML = `<div class="empty" style="color:#dc2626"><h2>⚠️ 看板暂时无法加载</h2><p style="margin:10px 0">${esc(err?.message || String(err))}</p><button class="btn btn-primary" onclick="location.reload()">重新加载</button></div>`;
+}
 
 // ============================================================
 // 数据加载
@@ -154,10 +151,11 @@ async function loadProfile(){
 }
 
 async function loadConfig(){
-  const [{data: servers}, {data: gpus}] = await Promise.all([
+  const [{data: servers, error: serverError}, {data: gpus, error: gpuError}] = await Promise.all([
     sb.from('servers').select('*').order('id'),
     sb.from('gpus').select('*, servers(name)').order('slot_index')
   ]);
+  if(serverError) throw serverError; if(gpuError) throw gpuError;
   state.servers = servers || [];
   // 按 server_id 再 slot_index 稳定排序（保险起见在 JS 里再排一次）
   state.gpus = (gpus||[])
@@ -166,7 +164,7 @@ async function loadConfig(){
 }
 
 async function loadReservations(){
-  const { data } = await sb.from('reservations')
+  const { data, error } = await sb.from('reservations')
     .select('*, profiles(display_name)').order('start_time');
   state.reservations = (data||[]).map(r => ({
     ...r, display_name: r.profiles?.display_name || '未知'
@@ -386,16 +384,14 @@ async function signOut(){
 }
 
 // 监听 Auth 状态变化（魔法链接回调）
-sb.auth.onAuthStateChange(async (event, session) => {
+sb.auth.onAuthStateChange((event, session) => {
   if (event === 'SIGNED_IN' && session?.user) {
     state.user = session.user;
-    await loadProfile();
+    state.profile = null;
     render();
+    setTimeout(async () => { try { await refreshData(); render(); } catch(err) { showLoadError(err); } }, 0);
   }
-  if (event === 'SIGNED_OUT') {
-    state.user = null; state.profile = null;
-    render();
-  }
+  if (event === 'SIGNED_OUT') { state.user = null; state.profile = null; render(); }
 });
 
 // ============================================================
@@ -582,6 +578,10 @@ function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
 </script>
 </body>
 </html>
+
+
+
+
 
 
 
