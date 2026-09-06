@@ -100,14 +100,12 @@ const PALETTE = [
   ['#0891b2','#06b6d4'],['#ca8a04','#eab308'],['#dc2626','#ef4444'],
   ['#4338ca','#6366f1'],['#be185d','#f472b6']
 ];
-function colorFor(userId){
-  const mine = state.user && String(userId) === String(state.user.id);
-  const selected = mine && localStorage.getItem(`gpu-board-color-${userId}`);
-  if(selected) return [selected, selected];
+function colorFor(userId, savedColor){
+  if(/^#[0-9a-f]{6}$/i.test(savedColor || '')) return [savedColor, savedColor];
   let h=0; for(let i=0;i<userId.length;i++) h=(h*31+userId.charCodeAt(i))>>>0;
   return PALETTE[h%PALETTE.length];
 }
-function myColor(){ return localStorage.getItem(`gpu-board-color-${state.user?.id}`) || '#3867f4'; }
+function myColor(){ return state.profile?.color || colorFor(state.user?.id || '')[0]; }
 
 // ---- 状态 ----
 let state = {
@@ -173,22 +171,29 @@ async function loadConfig(){
 
 async function loadReservations(){
   // reservations 与 profiles 都关联 auth.users，不能在 PostgREST 中直接嵌套联表。
-  const [{ data: reservations, error: reservationError }, { data: profiles, error: profileError }] = await Promise.all([
-    sb.from('reservations').select('*').order('start_time'),
-    sb.from('profiles').select('user_id, display_name')
-  ]);
+  const { data: reservations, error: reservationError } = await sb.from('reservations').select('*').order('start_time');
   if(reservationError) throw reservationError;
+  let { data: profiles, error: profileError } = await sb.from('profiles').select('user_id, display_name, color');
+  // 部署先于数据库迁移时，仍保持看板可用；迁移完成后自动读取共享颜色。
+  if(profileError && /color|column/i.test(profileError.message || '')) {
+    ({ data: profiles, error: profileError } = await sb.from('profiles').select('user_id, display_name'));
+  }
   if(profileError) throw profileError;
-  const names = new Map((profiles || []).map(p => [String(p.user_id), p.display_name]));
+  const names = new Map((profiles || []).map(p => [String(p.user_id), p]));
   state.reservations = (reservations || []).map(r => ({
-    ...r, display_name: names.get(String(r.user_id)) || '未知'
+    ...r, display_name: names.get(String(r.user_id))?.display_name || '未知',
+    color: names.get(String(r.user_id))?.color || null
   }));
-}// ============================================================
+}
+// ============================================================
 // Realtime 订阅
 // ============================================================
 function subscribeRealtime(){
   sb.channel('reservations-changes')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'reservations' }, async () => {
+      await loadReservations(); renderMain();
+    })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, async () => {
       await loadReservations(); renderMain();
     })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'gpus' }, async () => {
@@ -296,7 +301,7 @@ function ganttHtml(){
         const e = Math.min(totalMs, new Date(r.end_time) - windowStart);
         const leftPct = s/totalMs*100;
         const widthPct = Math.max(1.5,(e-s)/totalMs*100); // 最小宽度避免消失
-        const [bg] = colorFor(r.user_id);
+        const [bg] = colorFor(r.user_id, r.color);
         const isPast = new Date(r.end_time) < new Date();
         const mine = state.user && r.user_id === state.user.id;
         const name = r.display_name + (mine ? ' (我)' : '');
@@ -538,11 +543,10 @@ function openProfileModal(){
 async function updateProfile(){
   const name = document.getElementById('newName').value.trim();
   if(!name) return;
-  const { error } = await sb.from('profiles')
-    .update({ display_name: name }).eq('user_id', state.user.id);
+  const color = document.getElementById('myColor').value;
+  const { error } = await sb.from('profiles').update({ display_name: name, color }).eq('user_id', state.user.id);
   if(error){ alert('更新失败: '+error.message); return; }
-  localStorage.setItem('gpu-board-color-' + state.user.id, document.getElementById('myColor').value);
-  state.profile.display_name = name;
+  state.profile.display_name = name; state.profile.color = color;
   closeModal(); renderTop(); renderMain();
 }
 
@@ -619,27 +623,3 @@ function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
 </script>
 </body>
 </html>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

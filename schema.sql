@@ -25,8 +25,11 @@ create table if not exists public.gpus (
 create table if not exists public.profiles (
     user_id      uuid primary key references auth.users(id) on delete cascade,
     display_name text not null,
+    color        text,
     created_at   timestamptz not null default now()
 );
+
+alter table public.profiles add column if not exists color text;
 
 -- ---------- 4. reservations 表 ----------
 create table if not exists public.reservations (
@@ -105,6 +108,7 @@ begin
 end $$;
 
 alter publication supabase_realtime add table public.reservations;
+alter publication supabase_realtime add table public.profiles;
 alter publication supabase_realtime add table public.gpus;
 alter publication supabase_realtime add table public.servers;
 
@@ -121,4 +125,3 @@ insert into public.gpus (server_id, slot_index, label)
 select s.id, v.slot, s.name || ' / GPU-' || v.slot
 from public.servers s
 cross join lateral (select generate_series(0, case s.name when 'Server A · 4090D' then 0 when 'Server B · 4090 ×2' then 1 when 'Server C · H100 ×4' then 3 when 'Server D · A100 ×2' then 1 end) as slot) v;
-
