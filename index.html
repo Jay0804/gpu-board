@@ -76,7 +76,7 @@ body{background:linear-gradient(135deg,#f5f7f4 0%,#eaf0ee 52%,#e3ece9 100%);font
 .board-panel{border-radius:4px;border:1px solid #cbd9d5;background:rgba(253,254,253,.88);box-shadow:0 18px 45px rgba(5,42,52,.09);overflow:hidden}.board-panel .toolbar{min-height:66px;padding:13px 18px;background:linear-gradient(90deg,#f7faf8,#f1f6f3);border-bottom:1px solid #d5e1de}.view-switcher{border-radius:2px;padding:3px;background:#dce8e4}.view-switcher .btn{border-radius:1px;color:#4d6670;padding:5px 11px}.view-switcher .btn.active{color:#074f56;background:#fff;box-shadow:0 1px 5px rgba(6,48,58,.14)}.view-range{font-family:"Noto Serif SC","STSong",serif;color:#153849;font-size:15px;letter-spacing:.04em}.gantt{background:#fff}.gantt-header{background:#eff5f2;border-bottom:1px solid #cddbd7}.gantt-header-label{background:#eff5f2;color:#4d6973;font-size:10px}.gantt-label{background:#fbfdfc;color:#173747;font-size:12px}.gantt-label:before{background:#2a9c8e;box-shadow:0 0 0 4px rgba(42,156,142,.12)}.gantt-track{background-color:#fdfefd;background-image:repeating-linear-gradient(90deg,transparent 0,transparent calc(100%/var(--grid-cols) - 1px),#e3ece9 calc(100%/var(--grid-cols) - 1px),#e3ece9 calc(100%/var(--grid-cols)))}.gantt-track:hover{background-color:#f2f8f6}.gantt-header-day{color:#607681;border-color:#dae5e2}.gantt-header-day.today{color:#0b6569}.gantt-bar{border-radius:3px;box-shadow:0 3px 8px rgba(4,43,49,.2);font-size:10px;letter-spacing:.02em}.gantt-row{border-color:#dfe9e6}.gantt-label,.gantt-header-label{border-color:#d8e3df}
 .modal-overlay{background:rgba(5,29,40,.58);backdrop-filter:blur(3px)}.modal{border-radius:4px;border:1px solid rgba(197,164,107,.45);background:#fbfdfc;box-shadow:0 28px 90px rgba(4,25,37,.38);padding:30px}.modal h2{font-family:"Noto Serif SC","STSong",serif;font-size:21px;color:#123448;border-left:3px solid var(--gold);padding-left:10px}.field label{font-weight:700;color:#274656}.field select,.field input{border-radius:3px;border-color:#cbd9d5;background:#fff;color:#163644}.field select:focus,.field input:focus{outline:2px solid rgba(11,89,97,.15);border-color:#267b7b}.auth-box{border-radius:4px;border-top:3px solid var(--gold);box-shadow:0 20px 45px rgba(8,43,54,.11)}
 @media(max-width:760px){.topbar{height:auto;min-height:72px;padding:11px 18px}.brand-mark{width:35px;height:35px;padding:6px}.brand-copy h1{font-size:15px}.brand-copy small{display:none}.brand-copy span{font-size:7px}.topbar .right{margin-left:auto}.app-shell{padding:32px 18px 42px}.dashboard-head h2{font-size:27px}.metrics{grid-template-columns:1fr 1fr;gap:10px}.metric{padding:14px}.board-panel .toolbar{padding:11px}.view-range{font-size:13px}.dashboard-head .btn{padding:9px 11px}}
-</style></head>
+.btn{border-radius:9px}.btn-primary,.btn-primary:hover{color:#fff}.view-switcher{border-radius:10px}.view-switcher .btn,.view-switcher .btn.active{border-radius:7px}.metric{border-radius:15px}.board-panel{border-radius:17px}.modal{border-radius:18px}.field select,.field input{border-radius:8px}.auth-box{border-radius:18px}.brand-mark{border-radius:9px}.gantt-bar{border-radius:7px}.timeline-navigator{display:flex;align-items:center;gap:14px;padding:12px 18px 15px;background:#f7faf8;border-top:1px solid #d5e1de;color:#4f6871;font-size:10px;font-weight:750;letter-spacing:.08em}.timeline-navigator input{appearance:none;flex:1;min-width:120px;height:7px;border-radius:999px;background:linear-gradient(90deg,#78aaa5,#0b5961);outline:none;cursor:ew-resize}.timeline-navigator input::-webkit-slider-thumb{appearance:none;width:17px;height:17px;border:3px solid #fff;border-radius:50%;background:#a87d3b;box-shadow:0 1px 5px rgba(19,47,54,.32)}.timeline-navigator input::-moz-range-thumb{width:12px;height:12px;border:3px solid #fff;border-radius:50%;background:#a87d3b;box-shadow:0 1px 5px rgba(19,47,54,.32)}.timeline-navigator span:last-child{color:#789098;font-weight:600;letter-spacing:.04em;white-space:nowrap}@media(max-width:760px){.timeline-navigator{gap:8px;padding:11px 12px;font-size:9px}.timeline-navigator span:last-child{display:none}}</style></head>
 <body>
 
 <div class="topbar">
@@ -131,7 +131,9 @@ let state = {
   gpus: [],          // [{id, server_id, label, server_name}]
   reservations: [],  // [{id, gpu_id, user_id, display_name, start_time, end_time, note}]
   viewCenter: new Date(), // 当前视图的锚点日期
-  viewMode: 'week'        // day | week | month | year
+  viewMode: 'week',       // day | week | month | year
+  timelineOrigin: null,
+  timelineOffset: 0
 };
 state.viewCenter.setHours(0,0,0,0);
 
@@ -286,8 +288,13 @@ function boardHtml(){
   const view=getViewWindow(),now=new Date();
   const active=state.gpus.filter(g=>state.reservations.some(r=>String(r.gpu_id)===String(g.id)&&new Date(r.start_time)<=now&&new Date(r.end_time)>now)).length;
   let booked=0;state.reservations.filter(r=>new Date(r.end_time)>view.start&&new Date(r.start_time)<view.end).forEach(r=>booked+=(Math.min(new Date(r.end_time),view.end)-Math.max(new Date(r.start_time),view.start))/36e5);
-  return `<div class="app-shell"><div class="dashboard-head"><div><div class="eyebrow"><span>COMPUTE RESOURCE OPERATIONS</span><em>·</em> TSINGHUA SCCT</div><h2>GPU 资源协调平台</h2><p>面向安全控制技术研究的共享算力调度与预约协同。</p></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" onclick="manualRefresh()">↻ 刷新</button><button class="btn" onclick="openManageModal()">管理我的预约</button><button class="btn btn-primary" onclick="openReserveModal()">＋ 新建预约</button></div></div><div class="metrics"><div class="metric"><span>▦ 资源总数</span><b>${state.gpus.length}</b><small>${state.servers.length} 台服务器</small></div><div class="metric"><span>● 此刻可用</span><b>${state.gpus.length-active}</b><small>当前没有进行中的预约</small></div></div><div class="board-panel"><div class="toolbar"><div class="view-switcher">${[['day','日'],['week','周'],['month','月'],['year','年']].map(([m,l])=>`<button class="btn btn-sm ${state.viewMode===m?'active':''}" onclick="setViewMode('${m}')">${l}</button>`).join('')}</div><button class="btn btn-sm" onclick="shiftView(-1)">← 上一${viewUnit()}</button><span class="view-range">${view.title}</span><button class="btn btn-sm" onclick="shiftView(0)">今天</button><button class="btn btn-sm" onclick="shiftView(1)">下一${viewUnit()} →</button><span style="flex:1"></span><span class="muted">点击色块查看或编辑预约</span></div><div class="gantt-wrap">${ganttHtml()}</div></div></div>`;
+  return `<div class="app-shell"><div class="dashboard-head"><div><div class="eyebrow"><span>COMPUTE RESOURCE OPERATIONS</span><em>·</em> RCSCT</div><h2>GPU 资源协调平台</h2></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" onclick="manualRefresh()">↻ 刷新</button><button class="btn" onclick="openManageModal()">管理我的预约</button><button class="btn btn-primary" onclick="openReserveModal()">＋ 新建预约</button></div></div><div class="metrics"><div class="metric"><span>▦ 资源总数</span><b>${state.gpus.length}</b><small>${state.servers.length} 台服务器</small></div><div class="metric"><span>● 此刻可用</span><b>${state.gpus.length-active}</b><small>当前没有进行中的预约</small></div></div><div class="board-panel"><div class="toolbar"><div class="view-switcher">${[['day','日'],['week','周'],['month','月'],['year','年']].map(([m,l])=>`<button class="btn btn-sm ${state.viewMode===m?'active':''}" onclick="setViewMode('${m}')">${l}</button>`).join('')}</div><button class="btn btn-sm" onclick="shiftView(-1)">← 上一${viewUnit()}</button><span class="view-range">${view.title}</span><button class="btn btn-sm" onclick="shiftView(0)">今天</button><button class="btn btn-sm" onclick="shiftView(1)">下一${viewUnit()} →</button><span style="flex:1"></span><span class="muted">点击色块查看或编辑预约</span></div><div class="gantt-wrap">${ganttHtml()}</div>${timelineNavigatorHtml()}</div></div>`;
 }
+function timelineNavigatorHtml(){
+  const config={day:['天',14],week:['周',12],month:['月',12],year:['年',5]}[state.viewMode];
+  return `<div class="timeline-navigator"><span>时间浏览</span><input type="range" min="-${config[1]}" max="${config[1]}" value="${state.timelineOffset||0}" oninput="slideTimeline(this.value)" aria-label="拖动浏览前后安排"><span>前后 ${config[1]} ${config[0]}</span></div>`;
+}
+
 // ---- 甘特图渲染 ----
 function ganttHtml(){
   const view = getViewWindow();
@@ -525,6 +532,7 @@ async function saveResev(id){
   }
   if(res.error){ alert('保存失败: '+res.error.message); return; }
   state.viewCenter = new Date(start); state.viewCenter.setHours(0,0,0,0);
+  resetTimelineNavigator();
   closeModal(); await loadReservations(); renderMain();
 }
 
@@ -583,16 +591,30 @@ async function deleteSelectedReservations(){
 // ============================================================
 // 视图导航
 // ============================================================
+function resetTimelineNavigator(){
+  state.timelineOrigin = new Date(state.viewCenter);
+  state.timelineOffset = 0;
+}
+function slideTimeline(value){
+  const offset=Number(value);
+  if(!state.timelineOrigin) state.timelineOrigin = new Date(state.viewCenter);
+  const next=new Date(state.timelineOrigin);
+  if(state.viewMode === 'day') next.setDate(next.getDate()+offset);
+  else if(state.viewMode === 'week') next.setDate(next.getDate()+offset*7);
+  else if(state.viewMode === 'month') next.setMonth(next.getMonth()+offset);
+  else next.setFullYear(next.getFullYear()+offset);
+  state.timelineOffset=offset; state.viewCenter=next; renderMain();
+}
 function shiftView(days){
   if(days === 0){ state.viewCenter = new Date(); state.viewCenter.setHours(0,0,0,0); }
   else if(state.viewMode === 'day') state.viewCenter.setDate(state.viewCenter.getDate()+days);
   else if(state.viewMode === 'week') state.viewCenter.setDate(state.viewCenter.getDate()+days*7);
   else if(state.viewMode === 'month') state.viewCenter.setMonth(state.viewCenter.getMonth()+days);
   else state.viewCenter.setFullYear(state.viewCenter.getFullYear()+days);
-  renderMain();
+  resetTimelineNavigator(); renderMain();
 }
 
-function setViewMode(mode){ state.viewMode = mode; renderMain(); }
+function setViewMode(mode){ state.viewMode = mode; resetTimelineNavigator(); renderMain(); }
 function viewUnit(){ return {day:'日',week:'周',month:'月',year:'年'}[state.viewMode]; }
 
 function getViewWindow(){
