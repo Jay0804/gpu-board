@@ -109,16 +109,16 @@ alter publication supabase_realtime add table public.gpus;
 alter publication supabase_realtime add table public.servers;
 
 -- ============================================================
--- Seed：示例数据（按需修改 / 删除）
+-- Seed：实验室当前真实配置，共 4 台服务器 / 9 张 GPU
 -- ============================================================
 insert into public.servers (name, ssh_alias) values
-    ('server-A', 'gpu-box-a'),
-    ('server-B', 'gpu-box-b')
-on conflict do nothing;
+  ('Server A · 4090D', 'server-a'),
+  ('Server B · 4090 ×2', 'server-b'),
+  ('Server C · H100 ×4', 'server-c'),
+  ('Server D · A100 ×2', 'server-d');
 
 insert into public.gpus (server_id, slot_index, label)
-select s.id, g.slot,
-       s.name || '/GPU-' || g.slot
+select s.id, v.slot, s.name || ' / GPU-' || v.slot
 from public.servers s
-cross join (values (0),(1),(2),(3)) as g(slot)
-where not exists (select 1 from public.gpus where server_id = s.id and slot_index = g.slot);
+cross join lateral (select generate_series(0, case s.name when 'Server A · 4090D' then 0 when 'Server B · 4090 ×2' then 1 when 'Server C · H100 ×4' then 3 when 'Server D · A100 ×2' then 1 end) as slot) v;
+
