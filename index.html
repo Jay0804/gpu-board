@@ -82,7 +82,7 @@ body{background:linear-gradient(135deg,#f5f7f4 0%,#eaf0ee 52%,#e3ece9 100%);font
 .gpu-option:hover{border-color:var(--primary)}
 .gpu-option:has(input:checked){border-color:var(--primary);background:#eaf5f2;color:var(--primary)}
 .gpu-option input{flex:0 0 18px;width:18px;height:18px;margin:1px 0 0;padding:0;border:0;border-radius:3px;box-sizing:border-box;accent-color:var(--primary)}.gpu-option span{display:block;min-width:0;line-height:1.45}
-.gpu-count{margin-top:6px;color:var(--muted);font-size:10px}.gpu-selected-names{margin-top:2px;color:var(--muted);font-size:10px;line-height:1.45;word-break:break-word}
+.gpu-count{margin-top:6px;color:var(--muted);font-size:10px}.gpu-selected-names{margin-top:2px;color:var(--muted);font-size:10px;line-height:1.45;word-break:break-word;white-space:pre-line}
 @media(max-width:560px){.gpu-picker{grid-template-columns:1fr}}
 .auth-box .oauth-btn{width:100%;padding:10px;display:flex;align-items:center;justify-content:center;gap:8px;font-weight:600}
 .auth-box .google-btn{margin-top:10px;background:#fff;color:#25304a;border-color:#ccd6e5}
@@ -534,7 +534,7 @@ function updateGpuSelectionCount(){
   const names = document.getElementById('gpuSelectedNames');
   if(names){
     const labels = selected.map(id => state.gpus.find(g => String(g.id) === String(id))?.label).filter(Boolean);
-    names.textContent = labels.length ? labels.join('、') : '未选择 GPU';
+    names.textContent = labels.length ? labels.join('\n') : '未选择 GPU';
   }
 }
 async function checkConflict(){
