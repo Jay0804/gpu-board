@@ -288,7 +288,7 @@ function boardHtml(){
   const view=getViewWindow(),now=new Date();
   const active=state.gpus.filter(g=>state.reservations.some(r=>String(r.gpu_id)===String(g.id)&&new Date(r.start_time)<=now&&new Date(r.end_time)>now)).length;
   let booked=0;state.reservations.filter(r=>new Date(r.end_time)>view.start&&new Date(r.start_time)<view.end).forEach(r=>booked+=(Math.min(new Date(r.end_time),view.end)-Math.max(new Date(r.start_time),view.start))/36e5);
-  return `<div class="app-shell"><div class="dashboard-head"><div><div class="eyebrow"><span>COMPUTE RESOURCE OPERATIONS</span><em>·</em> RCSCT</div><h2>GPU 资源协调平台</h2></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" onclick="manualRefresh()">↻ 刷新</button><button class="btn" onclick="openManageModal()">管理我的预约</button><button class="btn btn-primary" onclick="openReserveModal()">＋ 新建预约</button></div></div><div class="metrics"><div class="metric"><span>▦ 资源总数</span><b>${state.gpus.length}</b><small>${state.servers.length} 台服务器</small></div><div class="metric"><span>● 此刻可用</span><b>${state.gpus.length-active}</b><small>当前没有进行中的预约</small></div></div><div class="board-panel"><div class="toolbar"><div class="view-switcher">${[['day','日'],['week','周'],['month','月'],['year','年']].map(([m,l])=>`<button class="btn btn-sm ${state.viewMode===m?'active':''}" onclick="setViewMode('${m}')">${l}</button>`).join('')}</div><button class="btn btn-sm" onclick="shiftView(-1)">← 上一${viewUnit()}</button><span class="view-range">${view.title}</span><button class="btn btn-sm" onclick="shiftView(0)">今天</button><button class="btn btn-sm" onclick="shiftView(1)">下一${viewUnit()} →</button><span style="flex:1"></span><span class="muted">点击色块查看或编辑预约</span></div><div class="gantt-wrap">${ganttHtml()}</div>${timelineNavigatorHtml()}</div></div>`;
+  return `<div class="app-shell"><div class="dashboard-head"><div><div class="eyebrow"><span>COMPUTE RESOURCE OPERATIONS</span><em>·</em> RCSCT</div><h2>GPU 资源协调平台</h2></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" onclick="manualRefresh()">↻ 刷新</button><button class="btn" onclick="openManageModal()">管理我的预约</button><button class="btn btn-primary" onclick="openReserveModal()">＋ 新建预约</button></div></div><div class="metrics"><div class="metric"><span>▦ 资源总数</span><b>${state.gpus.length}</b><small>${state.servers.length} 台服务器</small></div><div class="metric"><span>● 此刻可用</span><b>${state.gpus.length-active}</b><small>当前没有进行中的预约</small></div></div><div class="board-panel"><div class="toolbar"><div class="view-switcher">${[['day','日'],['week','周'],['month','月'],['year','年']].map(([m,l])=>`<button class="btn btn-sm ${state.viewMode===m?'active':''}" onclick="setViewMode('${m}')">${l}</button>`).join('')}</div><button class="btn btn-sm" onclick="shiftView(-1)">← 上一${viewUnit()}</button><span class="view-range">${view.title}</span><button class="btn btn-sm" onclick="shiftView(0)">今天</button><button class="btn btn-sm" onclick="shiftView(1)">下一${viewUnit()} →</button><span style="flex:1"></span><span class="muted">点击色块查看或编辑预约</span></div><div class="gantt-wrap" id="timelineGantt">${ganttHtml()}</div>${timelineNavigatorHtml()}</div></div>`;
 }
 function timelineNavigatorHtml(){
   const config={day:{unit:'小时',limit:48},week:{unit:'天',limit:21},month:{unit:'天',limit:60},year:{unit:'月',limit:18}}[state.viewMode];
@@ -596,6 +596,15 @@ function resetTimelineNavigator(){
   state.timelineOrigin = new Date(state.viewCenter);
   state.timelineOffset = 0;
 }
+let timelineRenderFrame = 0;
+function renderTimelineWindow(){
+  const ganttEl=document.getElementById('timelineGantt');
+  const rangeEl=document.querySelector('.board-panel .view-range');
+  if(!ganttEl || !rangeEl){ renderMain(); return; }
+  const view=getViewWindow();
+  rangeEl.textContent=view.title;
+  ganttEl.innerHTML=ganttHtml();
+}
 function slideTimeline(value){
   const offset=Number(value);
   if(!state.timelineOrigin) state.timelineOrigin = new Date(state.viewCenter);
@@ -604,7 +613,9 @@ function slideTimeline(value){
   else if(state.viewMode === 'week') next.setDate(next.getDate()+offset);
   else if(state.viewMode === 'month') next.setDate(next.getDate()+offset);
   else next.setMonth(next.getMonth()+offset);
-  state.timelineOffset=offset; state.viewCenter=next; renderMain();
+  state.timelineOffset=offset; state.viewCenter=next;
+  if(timelineRenderFrame) cancelAnimationFrame(timelineRenderFrame);
+  timelineRenderFrame=requestAnimationFrame(()=>{ timelineRenderFrame=0; renderTimelineWindow(); });
 }
 function jumpTimelineToday(){
   state.viewCenter = new Date(); state.viewCenter.setHours(0,0,0,0);
