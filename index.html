@@ -114,6 +114,17 @@ body{background:linear-gradient(135deg,#f5f7f4 0%,#eaf0ee 52%,#e3ece9 100%);font
 const SUPABASE_URL = 'https://grbyidfrealvpffohybu.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdyYnlpZGZyZWFsdnBmZm9oeWJ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg2ODQyNDMsImV4cCI6MjEwNDI2MDI0M30.B2mHWeVvHbZwlfVIJDA_ozI-ZCqTcrkI9cmn_8wz-yU';
 
+function normalizeOAuthHash(){
+  const hash = window.location.hash || '';
+  if(hash.startsWith('##')){
+    const fixedHash = hash.slice(1);
+    window.history.replaceState(null, document.title, window.location.pathname + window.location.search + fixedHash);
+  }
+}
+function oauthRedirectUrl(){
+  return window.location.origin + window.location.pathname + window.location.search;
+}
+normalizeOAuthHash();
 const sb = window.supabase
   ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY)
   : null;
@@ -416,7 +427,7 @@ async function signInWithGithub(){
   msg.innerHTML = '<span class="muted">正在跳转 GitHub 授权…</span>';
   const { error } = await sb.auth.signInWithOAuth({
     provider: 'github',
-    options: { redirectTo: window.location.href }
+    options: { redirectTo: oauthRedirectUrl() }
   });
   if(error){
     console.error('GitHub 登录失败:', error);
@@ -429,7 +440,7 @@ async function signInWithGoogle(){
   msg.innerHTML = '<span class="muted">正在跳转 Google 授权…</span>';
   const { error } = await sb.auth.signInWithOAuth({
     provider: 'google',
-    options: { redirectTo: window.location.href }
+    options: { redirectTo: oauthRedirectUrl() }
   });
   if(error){
     console.error('Google 登录失败:', error);
