@@ -291,7 +291,7 @@ function boardHtml(){
   return `<div class="app-shell"><div class="dashboard-head"><div><div class="eyebrow"><span>COMPUTE RESOURCE OPERATIONS</span><em>·</em> RCSCT</div><h2>GPU 资源协调平台</h2></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" onclick="manualRefresh()">↻ 刷新</button><button class="btn" onclick="openManageModal()">管理我的预约</button><button class="btn btn-primary" onclick="openReserveModal()">＋ 新建预约</button></div></div><div class="metrics"><div class="metric"><span>▦ 资源总数</span><b>${state.gpus.length}</b><small>${state.servers.length} 台服务器</small></div><div class="metric"><span>● 此刻可用</span><b>${state.gpus.length-active}</b><small>当前没有进行中的预约</small></div></div><div class="board-panel"><div class="toolbar"><div class="view-switcher">${[['day','日'],['week','周'],['month','月'],['year','年']].map(([m,l])=>`<button class="btn btn-sm ${state.viewMode===m?'active':''}" onclick="setViewMode('${m}')">${l}</button>`).join('')}</div><button class="btn btn-sm" onclick="shiftView(-1)">← 上一${viewUnit()}</button><span class="view-range">${view.title}</span><button class="btn btn-sm" onclick="shiftView(0)">今天</button><button class="btn btn-sm" onclick="shiftView(1)">下一${viewUnit()} →</button><span style="flex:1"></span><span class="muted">点击色块查看或编辑预约</span></div><div class="gantt-wrap">${ganttHtml()}</div>${timelineNavigatorHtml()}</div></div>`;
 }
 function timelineNavigatorHtml(){
-  const config={day:{unit:'天',limit:14},week:{unit:'天',limit:21},month:{unit:'月',limit:12},year:{unit:'年',limit:5}}[state.viewMode];
+  const config={day:{unit:'小时',limit:48},week:{unit:'天',limit:21},month:{unit:'天',limit:60},year:{unit:'月',limit:18}}[state.viewMode];
   const marks=Array.from({length:7},()=>'<i></i>').join('');
   return `<div class="timeline-navigator"><span class="timeline-label">时间浏览</span><button class="timeline-today" type="button" onclick="jumpTimelineToday()">今天</button><div class="timeline-control"><input type="range" min="-${config.limit}" max="${config.limit}" step="1" value="${state.timelineOffset||0}" oninput="slideTimeline(this.value)" aria-label="拖动浏览前后安排"><div class="timeline-ticks" aria-hidden="true">${marks}</div><div class="timeline-scale"><span>−${config.limit} ${config.unit}</span><span>今天</span><span>+${config.limit} ${config.unit}</span></div></div></div>`;
 }
@@ -600,10 +600,10 @@ function slideTimeline(value){
   const offset=Number(value);
   if(!state.timelineOrigin) state.timelineOrigin = new Date(state.viewCenter);
   const next=new Date(state.timelineOrigin);
-  if(state.viewMode === 'day') next.setDate(next.getDate()+offset);
+  if(state.viewMode === 'day') next.setHours(next.getHours()+offset);
   else if(state.viewMode === 'week') next.setDate(next.getDate()+offset);
-  else if(state.viewMode === 'month') next.setMonth(next.getMonth()+offset);
-  else next.setFullYear(next.getFullYear()+offset);
+  else if(state.viewMode === 'month') next.setDate(next.getDate()+offset);
+  else next.setMonth(next.getMonth()+offset);
   state.timelineOffset=offset; state.viewCenter=next; renderMain();
 }
 function jumpTimelineToday(){
@@ -623,27 +623,35 @@ function setViewMode(mode){ state.viewMode = mode; resetTimelineNavigator(); ren
 function viewUnit(){ return {day:'日',week:'周',month:'月',year:'年'}[state.viewMode]; }
 
 function getViewWindow(){
-  const anchor = new Date(state.viewCenter); anchor.setHours(0,0,0,0);
+  const anchor = new Date(state.viewCenter);
+  if(state.viewMode !== 'day') anchor.setHours(0,0,0,0);
   let start, end, cells = [];
   if(state.viewMode === 'day'){
-    start = anchor; end = new Date(start); end.setDate(end.getDate()+1);
-    for(let hour=0;hour<24;hour++){ const d=new Date(start); d.setHours(hour); cells.push({start:d,label:String(hour).padStart(2,'0')+':00'}); }
+    // 日视图为连续 24 小时窗口，可跨越午夜查看后续安排。
+    start = anchor; end = new Date(start); end.setHours(end.getHours()+24);
+    for(let hour=0;hour<24;hour++){
+      const d=new Date(start); d.setHours(d.getHours()+hour);
+      const prefix=(hour===0 || d.getHours()===0) ? (d.getMonth()+1)+'/'+d.getDate()+' ' : '';
+      cells.push({start:d,label:prefix+String(d.getHours()).padStart(2,'0')+':00'});
+    }
   } else if(state.viewMode === 'week'){
     // 周视图是可平移的连续 7 日窗口，允许同时浏览本周与下周的安排。
     start = new Date(anchor);
     end = new Date(start); end.setDate(end.getDate()+7);
     for(let i=0;i<7;i++){ const d=new Date(start); d.setDate(d.getDate()+i); cells.push({start:d,label:fmtDay(d)}); }
   } else if(state.viewMode === 'month'){
-    start = new Date(anchor.getFullYear(),anchor.getMonth(),1);
-    end = new Date(anchor.getFullYear(),anchor.getMonth()+1,1);
+    // 月视图为连续 30 天窗口，可从月中平滑延展到下月。
+    start = new Date(anchor); end = new Date(start); end.setDate(end.getDate()+30);
     for(let d=new Date(start);d<end;d.setDate(d.getDate()+1)) cells.push({start:new Date(d),label:(d.getMonth()+1)+'/'+d.getDate()});
   } else {
-    start = new Date(anchor.getFullYear(),0,1); end = new Date(anchor.getFullYear()+1,0,1);
-    for(let month=0;month<12;month++) cells.push({start:new Date(anchor.getFullYear(),month,1),label:(month+1)+' 月'});
+    // 年视图为连续 12 个月窗口，可从任意月份平滑跨年。
+    start = new Date(anchor.getFullYear(),anchor.getMonth(),1); end = new Date(start); end.setMonth(end.getMonth()+12);
+    for(let month=0;month<12;month++){ const d=new Date(start); d.setMonth(d.getMonth()+month); cells.push({start:d,label:d.getFullYear()+'/'+(d.getMonth()+1)}); }
   }
-  const title = state.viewMode === 'day' ? fmtDate(start) :
-    state.viewMode === 'week' ? `${fmtDate(start)} — ${fmtDate(new Date(end-1))}` :
-    state.viewMode === 'month' ? `${start.getFullYear()} 年 ${start.getMonth()+1} 月` : `${start.getFullYear()} 年`;
+  const last = new Date(end-1);
+  const title = state.viewMode === 'day' ? `${fmtDate(start)} ${String(start.getHours()).padStart(2,'0')}:00 — ${fmtDate(last)} ${String(last.getHours()).padStart(2,'0')}:59` :
+    state.viewMode === 'week' ? `${fmtDate(start)} — ${fmtDate(last)}` :
+    state.viewMode === 'month' ? `${fmtDate(start)} — ${fmtDate(last)}` : `${start.getFullYear()}/${start.getMonth()+1} — ${last.getFullYear()}/${last.getMonth()+1}`;
   return {start,end,cells,title};
 }
 
