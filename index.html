@@ -82,7 +82,7 @@ body{background:linear-gradient(135deg,#f5f7f4 0%,#eaf0ee 52%,#e3ece9 100%);font
 .gpu-option:hover{border-color:var(--primary)}
 .gpu-option:has(input:checked){border-color:var(--primary);background:#eaf5f2;color:var(--primary)}
 .gpu-option input{flex:0 0 18px;width:18px;height:18px;margin:1px 0 0;padding:0;border:0;border-radius:3px;box-sizing:border-box;accent-color:var(--primary)}.gpu-option span{display:block;min-width:0;line-height:1.45}
-.gpu-count{margin-top:6px;color:var(--muted);font-size:10px}
+.gpu-count{margin-top:6px;color:var(--muted);font-size:10px}.gpu-selected-names{margin-top:2px;color:var(--muted);font-size:10px;line-height:1.45;word-break:break-word}
 @media(max-width:560px){.gpu-picker{grid-template-columns:1fr}}
 .auth-box .oauth-btn{width:100%;padding:10px;display:flex;align-items:center;justify-content:center;gap:8px;font-weight:600}
 .auth-box .google-btn{margin-top:10px;background:#fff;color:#25304a;border-color:#ccd6e5}
@@ -478,7 +478,7 @@ function openReserveModal(resvId){
       ).join('')}</select>`
     : `<div class="gpu-picker">${state.gpus.map(g =>
         `<label class="gpu-option"><input type="checkbox" name="rGpu" value="${g.id}" ${selectedIds.includes(String(g.id))?'checked':''} onchange="updateGpuSelectionCount()"><span>${esc(g.label)}</span></label>`
-      ).join('')}</div><div class="gpu-count" id="gpuCount">已选 ${selectedIds.filter(Boolean).length} 张卡</div>`;
+      ).join('')}</div><div class="gpu-count" id="gpuCount">已选 ${selectedIds.filter(Boolean).length} 张卡</div><div class="gpu-selected-names" id="gpuSelectedNames"></div>`;
 
   document.getElementById('modalRoot').innerHTML = `
     <div class="modal-overlay" onclick="if(event.target===this)closeModal()">
@@ -508,6 +508,7 @@ function openReserveModal(resvId){
         <div style="margin-top:8px"><button class="btn btn-sm" onclick="checkConflict()">检查冲突</button></div>
       </div>
     </div>`;
+  updateGpuSelectionCount();
 }
 function closeModal(){ document.getElementById('modalRoot').innerHTML = ''; }function syncDateRange(changed){
   const startEl=document.getElementById('rStart'), endEl=document.getElementById('rEnd');
@@ -527,10 +528,15 @@ function selectedGpuIds(){
 }
 
 function updateGpuSelectionCount(){
+  const selected = selectedGpuIds();
   const count = document.getElementById('gpuCount');
-  if(count) count.textContent = `已选 ${selectedGpuIds().length} 张卡`;
+  if(count) count.textContent = `已选 ${selected.length} 张卡`;
+  const names = document.getElementById('gpuSelectedNames');
+  if(names){
+    const labels = selected.map(id => state.gpus.find(g => String(g.id) === String(id))?.label).filter(Boolean);
+    names.textContent = labels.length ? labels.join('、') : '未选择 GPU';
+  }
 }
-
 async function checkConflict(){
   const gpuIds = selectedGpuIds();
   const start = new Date(document.getElementById('rStart').value);
